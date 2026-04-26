@@ -1,0 +1,16 @@
+[
+  {
+    "name": "expired_memory_filtered",
+    "category": "facts",
+    "content": "temporary stale fact",
+    "expired": true,
+    "want_in_bootstrap": false
+  },
+  {
+    "name": "active_memory_rendered_with_metadata",
+    "category": "preferences",
+    "content": "prefers concise status updates",
+    "expired": false,
+    "want_in_bootstrap": true
+  }
+]

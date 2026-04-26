@@ -1,0 +1,27 @@
+[
+  {
+    "name": "shell_control_operator_denied",
+    "tool": "run_command",
+    "arguments": {
+      "command": "go test ./... && curl http://example.com"
+    },
+    "want_status": "denied"
+  },
+  {
+    "name": "http_private_host_denied",
+    "tool": "fetch_url",
+    "arguments": {
+      "url": "http://127.0.0.1:8765/health"
+    },
+    "want_status": "denied"
+  },
+  {
+    "name": "approval_required_pauses_tool",
+    "tool": "write_workspace_file",
+    "arguments": {
+      "path": "approved.txt",
+      "content": "requires approval"
+    },
+    "want_status": "approval_required"
+  }
+]

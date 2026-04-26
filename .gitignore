@@ -1,0 +1,4 @@
+bin/
+.codex/
+.idea/
+.DS_Store
