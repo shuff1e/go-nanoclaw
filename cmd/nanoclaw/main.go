@@ -12,6 +12,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"go-nanoclaw/internal/agent"
+	"go-nanoclaw/internal/brain"
 	"go-nanoclaw/internal/channel"
 	"go-nanoclaw/internal/config"
 	"go-nanoclaw/internal/gateway"
@@ -34,6 +36,7 @@ func main() {
 
 	rootCmd.AddCommand(initCmd())
 	rootCmd.AddCommand(chatCmd())
+	rootCmd.AddCommand(demoCmd())
 	rootCmd.AddCommand(checkCmd())
 	rootCmd.AddCommand(discordCmd())
 	rootCmd.AddCommand(serveCmd())
@@ -89,6 +92,61 @@ func initCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func demoCmd() *cobra.Command {
+	var task, readPath, workspace string
+	cmd := &cobra.Command{
+		Use:   "demo",
+		Short: "Run a local no-API-key agent loop demo",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if verbose == 0 {
+				mclog.SetVerbosity(1)
+			}
+			if workspace == "" {
+				var err error
+				workspace, err = os.Getwd()
+				if err != nil {
+					return err
+				}
+			}
+			if task == "" {
+				task = "Read a workspace file and summarize what this project does."
+			}
+			if readPath == "" {
+				readPath = "README.md"
+			}
+
+			cfg := config.NewConfig()
+			cfg.Workspace = workspace
+			cfg.MaxToolRounds = 3
+			def := cfg.Agents["main"]
+			def.Workspace = ""
+			def.AllowedTools = []string{"read_workspace_file", "list_workspace"}
+			def.ToolPolicies = config.ToolPolicyConfig{
+				FileWriteEnabled: false,
+				ShellEnabled:     false,
+				HTTPEnabled:      false,
+			}
+
+			a, err := agent.NewAgent(def, workspace, cfg, 0)
+			if err != nil {
+				return err
+			}
+			a.Brain = &brain.ScriptedBrain{Task: task, Path: readPath}
+
+			response, err := a.ProcessMessage(context.Background(), task)
+			if err != nil {
+				return err
+			}
+			fmt.Println(response)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&task, "task", "", "Demo task to send to the agent")
+	cmd.Flags().StringVar(&readPath, "read", "README.md", "Workspace-relative file to read during the demo")
+	cmd.Flags().StringVar(&workspace, "workspace", "", "Workspace directory; defaults to the current directory")
+	return cmd
 }
 
 func chatCmd() *cobra.Command {
