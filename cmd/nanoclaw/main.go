@@ -21,7 +21,12 @@ import (
 	"go-nanoclaw/internal/memory"
 )
 
-var verbose int
+var (
+	verbose   int
+	version   = "dev"
+	commit    = "unknown"
+	buildTime = "unknown"
+)
 
 func main() {
 	rootCmd := &cobra.Command{
@@ -41,6 +46,7 @@ func main() {
 	rootCmd.AddCommand(discordCmd())
 	rootCmd.AddCommand(serveCmd())
 	rootCmd.AddCommand(statusCmd())
+	rootCmd.AddCommand(versionCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -336,6 +342,16 @@ func statusCmd() *cobra.Command {
 				fmt.Printf("    Spawn depth: %d\n", agentDef.MaxSpawnDepth)
 			}
 			return nil
+		},
+	}
+}
+
+func versionCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Show version information",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Printf("nanoclaw %s (commit: %s, built: %s)\n", version, commit, buildTime)
 		},
 	}
 }

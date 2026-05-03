@@ -24,7 +24,7 @@ type OpenAIBrain struct {
 func NewOpenAIBrain(cfg config.BrainConfig) *OpenAIBrain {
 	return &OpenAIBrain{
 		cfg:    cfg,
-		client: &http.Client{},
+		client: &http.Client{Transport: NewRetryTransport()},
 	}
 }
 

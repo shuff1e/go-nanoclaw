@@ -131,7 +131,7 @@ func newCLITestGateway(t *testing.T) *gateway.Gateway {
 		t.Fatalf("get agent: %v", err)
 	}
 	agentInstance.Brain = &fakeBrain{
-		response: &brain.BrainResponse{
+		Response: &brain.BrainResponse{
 			Text:       "ok",
 			StopReason: "end_turn",
 		},

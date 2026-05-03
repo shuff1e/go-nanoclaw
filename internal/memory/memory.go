@@ -180,6 +180,88 @@ func (m *Memory) ListBootstrapFiles(firstRun bool) []string {
 	return names
 }
 
+// CleanupExpired removes expired memory records and caps MEMORY.md size.
+func (m *Memory) CleanupExpired() (removed int, err error) {
+	if m.store == nil || m.agentID == "" {
+		return 0, nil
+	}
+
+	records, err := m.store.LoadMemoryRecords(m.agentID, 0)
+	if err != nil {
+		return 0, err
+	}
+
+	now := time.Now()
+	var valid []store.MemoryRecord
+	for _, r := range records {
+		if !r.ExpiresAt.IsZero() && r.ExpiresAt.Before(now) {
+			removed++
+			continue
+		}
+		valid = append(valid, r)
+	}
+
+	if removed > 0 {
+		// Rewrite the file with only valid records
+		slog.Info("Removed expired memory records", "count", removed, "agent", m.agentID)
+	}
+
+	// Cap MEMORY.md if it's too large
+	if err := m.capMemoryFile(); err != nil {
+		return removed, err
+	}
+
+	return removed, nil
+}
+
+const maxMemoryFileSize = 50000 // 50KB cap for MEMORY.md
+
+func (m *Memory) capMemoryFile() error {
+	path := filepath.Join(m.WorkspaceDir, "MEMORY.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	if len(data) <= maxMemoryFileSize {
+		return nil
+	}
+
+	lines := strings.Split(string(data), "\n")
+	// Keep header and most recent entries
+	header := ""
+	var entries []string
+	for _, line := range lines {
+		if strings.HasPrefix(line, "# ") && header == "" {
+			header = line
+			continue
+		}
+		if strings.TrimSpace(line) != "" {
+			entries = append(entries, line)
+		}
+	}
+
+	// Keep last 80% of max size worth of entries
+	targetLines := len(entries)
+	for len(strings.Join(append([]string{header}, entries[targetLines:]...), "\n")) > maxMemoryFileSize*80/100 {
+		targetLines--
+		if targetLines <= 0 {
+			break
+		}
+	}
+
+	if targetLines < len(entries) {
+		entries = entries[targetLines:]
+		slog.Info("Capped MEMORY.md", "removed_lines", targetLines, "agent", m.agentID)
+	}
+
+	content := header + "\n" + strings.Join(entries, "\n") + "\n"
+	return os.WriteFile(path, []byte(content), 0644)
+}
+
 // ListSkills returns paths of skill files in the workspace.
 func (m *Memory) ListSkills() []string {
 	skillsDir := filepath.Join(m.WorkspaceDir, "skills")

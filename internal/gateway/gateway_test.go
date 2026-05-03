@@ -12,6 +12,7 @@ import (
 	"go-nanoclaw/internal/hooks"
 	mcRuntime "go-nanoclaw/internal/runtime"
 	"go-nanoclaw/internal/store"
+	"go-nanoclaw/internal/testutil"
 )
 
 func TestHandleInputDetailedRejectsEmptyText(t *testing.T) {
@@ -761,8 +762,4 @@ func TestCancelTaskCancelsRunningExecution(t *testing.T) {
 	}
 }
 
-type brainFunc func(ctx context.Context, messages []brain.Message, systemPrompt string, tools []brain.ToolSchema) (*brain.BrainResponse, error)
-
-func (f brainFunc) Think(ctx context.Context, messages []brain.Message, systemPrompt string, tools []brain.ToolSchema) (*brain.BrainResponse, error) {
-	return f(ctx, messages, systemPrompt, tools)
-}
+type brainFunc = testutil.BrainFunc

@@ -152,17 +152,10 @@ func (s *Scheduler) shouldRun(job *Job, now time.Time) bool {
 }
 
 func (s *Scheduler) executeJob(ctx context.Context, index int, now time.Time) {
-	s.mu.Lock()
-	if index >= len(s.jobs) {
-		s.mu.Unlock()
+	name, prompt := s.prepareJob(index, now)
+	if name == "" {
 		return
 	}
-	job := &s.jobs[index]
-	job.LastRun = &now
-	name := job.Name
-	prompt := job.Prompt
-	s.persistLocked()
-	s.mu.Unlock()
 
 	execCtx := mcRuntime.NewExecution(s.Agent.ID, s.Agent.ID+":cron", "cron")
 	execCtx.Budget.MaxWallClock = 1 * time.Minute
@@ -186,16 +179,12 @@ func (s *Scheduler) executeJob(ctx context.Context, index int, now time.Time) {
 
 // RunJobNow manually triggers a cron job by name.
 func (s *Scheduler) RunJobNow(ctx context.Context, name string) (string, error) {
-	s.mu.Lock()
-	for i := range s.jobs {
-		if s.jobs[i].Name == name {
-			s.mu.Unlock()
-			s.executeJob(ctx, i, time.Now())
-			return fmt.Sprintf("Job '%s' executed", name), nil
-		}
+	index := s.findJob(name)
+	if index < 0 {
+		return fmt.Sprintf("Job '%s' not found", name), nil
 	}
-	s.mu.Unlock()
-	return fmt.Sprintf("Job '%s' not found", name), nil
+	s.executeJob(ctx, index, time.Now())
+	return fmt.Sprintf("Job '%s' executed", name), nil
 }
 
 // ListJobs returns information about all cron jobs.
@@ -246,6 +235,34 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// prepareJob updates job state under lock and returns name/prompt.
+// Returns empty name if index is out of range.
+func (s *Scheduler) prepareJob(index int, now time.Time) (name, prompt string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if index >= len(s.jobs) {
+		return "", ""
+	}
+	job := &s.jobs[index]
+	job.LastRun = &now
+	name = job.Name
+	prompt = job.Prompt
+	s.persistLocked()
+	return name, prompt
+}
+
+// findJob returns the index of a job by name, or -1 if not found.
+func (s *Scheduler) findJob(name string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.jobs {
+		if s.jobs[i].Name == name {
+			return i
+		}
+	}
+	return -1
 }
 
 func (s *Scheduler) persistLocked() {

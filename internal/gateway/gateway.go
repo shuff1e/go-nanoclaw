@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"sort"
 	"strings"
@@ -153,12 +154,15 @@ type Gateway struct {
 	startTime       time.Time
 	requestCount    int64
 	errorCount      int64
+	rootCtx         context.Context
+	rootCancel      context.CancelFunc
 }
 
 const autoRetryDelay = 200 * time.Millisecond
 
 // NewGateway creates a new Gateway.
 func NewGateway(cfg *config.Config) *Gateway {
+	ctx, cancel := context.WithCancel(context.Background())
 	gw := &Gateway{
 		Config:         cfg,
 		Orchestrator:   agent.NewOrchestrator(cfg),
@@ -168,6 +172,8 @@ func NewGateway(cfg *config.Config) *Gateway {
 		runningTasks:   make(map[string]context.CancelFunc),
 		dispatcher:     mcRuntime.NewDispatcher(),
 		store:          store.NewFSStore(cfg.ConfigDir),
+		rootCtx:        ctx,
+		rootCancel:     cancel,
 	}
 	gw.runtime = &nativeAgentRuntime{gateway: gw}
 	return gw
@@ -196,6 +202,9 @@ func (gw *Gateway) applyExecutionBudget(execCtx *mcRuntime.ExecutionContext) {
 func (gw *Gateway) Start(ctx context.Context) error {
 	gw.running = true
 	gw.startTime = time.Now()
+
+	// Derive root context from caller's context so both can cancel
+	gw.rootCtx, gw.rootCancel = context.WithCancel(ctx)
 
 	if err := os.MkdirAll(gw.Config.ConfigDir, 0755); err != nil {
 		return fmt.Errorf("create session dir: %w", err)
@@ -333,15 +342,41 @@ func (gw *Gateway) AddCronJob(ctx context.Context, agentID string, job cron.Job)
 	}
 }
 
-// Stop stops all periodic checks and cron schedulers.
+// Stop stops all periodic checks, cron schedulers, and cancels running tasks.
 func (gw *Gateway) Stop() {
 	gw.running = false
+
+	// Cancel root context to stop all running tasks
+	if gw.rootCancel != nil {
+		gw.rootCancel()
+	}
+
 	for _, hb := range gw.heartbeats {
 		hb.Stop()
 	}
 	for _, scheduler := range gw.cronSchedulers {
 		scheduler.Stop()
 	}
+
+	// Wait for running tasks to finish (with timeout)
+	done := make(chan struct{})
+	go func() {
+		gw.taskMu.RLock()
+		defer gw.taskMu.RUnlock()
+		for len(gw.runningTasks) > 0 {
+			gw.taskMu.RUnlock()
+			time.Sleep(50 * time.Millisecond)
+			gw.taskMu.RLock()
+		}
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		slog.Warn("Timeout waiting for running tasks to complete")
+	}
+
 	slog.Info("Gateway stopped")
 }
 
@@ -718,11 +753,72 @@ func (gw *Gateway) Readiness() HealthStatus {
 	if storeError != "" {
 		checks["store_error"] = storeError
 	}
+
+	// Check LLM API reachability for each agent's provider
+	llmChecks := gw.checkLLMReachability()
+	if len(llmChecks) > 0 {
+		checks["llm_api"] = llmChecks
+		for _, ok := range llmChecks {
+			if !ok {
+				status = "degraded"
+			}
+		}
+	}
+
 	return HealthStatus{
 		Status:    status,
 		Checks:    checks,
 		Timestamp: time.Now().Format(time.RFC3339),
 	}
+}
+
+func (gw *Gateway) checkLLMReachability() map[string]bool {
+	results := make(map[string]bool)
+	checked := make(map[string]bool)
+
+	for _, def := range gw.Config.Agents {
+		provider := def.Brain.Provider
+		if checked[provider] {
+			continue
+		}
+		checked[provider] = true
+
+		baseURL := def.Brain.ResolveBaseURL()
+		var healthURL string
+		switch provider {
+		case "anthropic":
+			if baseURL == "" {
+				baseURL = "https://api.anthropic.com"
+			}
+			healthURL = baseURL + "/v1/messages"
+		case "openai":
+			if baseURL == "" {
+				baseURL = "https://api.openai.com/v1"
+			}
+			healthURL = baseURL + "/models"
+		default:
+			continue
+		}
+
+		client := &http.Client{Timeout: 5 * time.Second}
+		req, err := http.NewRequest("GET", healthURL, nil)
+		if err != nil {
+			results[provider] = false
+			continue
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			results[provider] = false
+			continue
+		}
+		resp.Body.Close()
+
+		// Accept any non-5xx response as "reachable"
+		results[provider] = resp.StatusCode < 500
+	}
+
+	return results
 }
 
 func (gw *Gateway) Metrics() string {

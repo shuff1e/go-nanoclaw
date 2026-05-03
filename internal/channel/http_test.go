@@ -18,15 +18,10 @@ import (
 	"go-nanoclaw/internal/gateway"
 	mcRuntime "go-nanoclaw/internal/runtime"
 	"go-nanoclaw/internal/store"
+	"go-nanoclaw/internal/testutil"
 )
 
-type fakeBrain struct {
-	response *brain.BrainResponse
-}
-
-func (f *fakeBrain) Think(ctx context.Context, messages []brain.Message, systemPrompt string, tools []brain.ToolSchema) (*brain.BrainResponse, error) {
-	return f.response, nil
-}
+type fakeBrain = testutil.FakeBrain
 
 func TestHTTPInputReturnsRequestID(t *testing.T) {
 	cfg := config.NewConfig()
@@ -44,7 +39,7 @@ func TestHTTPInputReturnsRequestID(t *testing.T) {
 		t.Fatalf("get agent: %v", err)
 	}
 	agentInstance.Brain = &fakeBrain{
-		response: &brain.BrainResponse{
+		Response: &brain.BrainResponse{
 			Text:       "ok",
 			StopReason: "end_turn",
 		},
@@ -91,7 +86,7 @@ func TestHTTPInputUsesProvidedSessionID(t *testing.T) {
 		t.Fatalf("get agent: %v", err)
 	}
 	agentInstance.Brain = &fakeBrain{
-		response: &brain.BrainResponse{
+		Response: &brain.BrainResponse{
 			Text:       "ok",
 			StopReason: "end_turn",
 		},
@@ -136,7 +131,7 @@ func TestHTTPInputAcceptsPlanExecuteMode(t *testing.T) {
 		t.Fatalf("get agent: %v", err)
 	}
 	agentInstance.Brain = &fakeBrain{
-		response: &brain.BrainResponse{
+		Response: &brain.BrainResponse{
 			Text:       "ok",
 			StopReason: "end_turn",
 		},
@@ -178,7 +173,7 @@ func TestHTTPAsyncTasksEndpoint(t *testing.T) {
 		t.Fatalf("get agent: %v", err)
 	}
 	agentInstance.Brain = &fakeBrain{
-		response: &brain.BrainResponse{
+		Response: &brain.BrainResponse{
 			Text:       "ok",
 			StopReason: "end_turn",
 		},
@@ -572,7 +567,7 @@ func TestHTTPInputAcceptsBearerAPIKey(t *testing.T) {
 		t.Fatalf("get agent: %v", err)
 	}
 	agentInstance.Brain = &fakeBrain{
-		response: &brain.BrainResponse{
+		Response: &brain.BrainResponse{
 			Text:       "ok",
 			StopReason: "end_turn",
 		},
@@ -690,7 +685,7 @@ func TestHTTPToolAuditEndpoint(t *testing.T) {
 		t.Fatalf("get agent: %v", err)
 	}
 	agentInstance.Brain = &fakeBrain{
-		response: &brain.BrainResponse{
+		Response: &brain.BrainResponse{
 			Text:       "ok",
 			StopReason: "end_turn",
 		},
@@ -956,7 +951,7 @@ func TestHTTPAsyncTaskAwaitsApprovalForProtectedTool(t *testing.T) {
 		t.Fatalf("get agent: %v", err)
 	}
 	agentInstance.Brain = &fakeBrain{
-		response: &brain.BrainResponse{
+		Response: &brain.BrainResponse{
 			ToolCalls: []brain.ToolCall{{
 				ID:        "tool-1",
 				Name:      "run_command",
@@ -1086,7 +1081,7 @@ func TestHTTPExecutionsEndpointFiltersBySessionID(t *testing.T) {
 		t.Fatalf("get agent: %v", err)
 	}
 	agentInstance.Brain = &fakeBrain{
-		response: &brain.BrainResponse{
+		Response: &brain.BrainResponse{
 			Text:       "ok",
 			StopReason: "end_turn",
 		},
@@ -1285,7 +1280,7 @@ func TestHTTPSessionsEndpoint(t *testing.T) {
 		t.Fatalf("get agent: %v", err)
 	}
 	agentInstance.Brain = &fakeBrain{
-		response: &brain.BrainResponse{
+		Response: &brain.BrainResponse{
 			Text:       "ok",
 			StopReason: "end_turn",
 		},
@@ -1417,11 +1412,7 @@ func TestHTTPQueryTime(t *testing.T) {
 	}
 }
 
-type brainFunc func(ctx context.Context, messages []brain.Message, systemPrompt string, tools []brain.ToolSchema) (*brain.BrainResponse, error)
-
-func (f brainFunc) Think(ctx context.Context, messages []brain.Message, systemPrompt string, tools []brain.ToolSchema) (*brain.BrainResponse, error) {
-	return f(ctx, messages, systemPrompt, tools)
-}
+type brainFunc = testutil.BrainFunc
 
 func requestIDFromResponse(t *testing.T, body []byte) string {
 	t.Helper()

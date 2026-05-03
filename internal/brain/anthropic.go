@@ -22,7 +22,7 @@ type AnthropicBrain struct {
 func NewAnthropicBrain(cfg config.BrainConfig) *AnthropicBrain {
 	return &AnthropicBrain{
 		cfg:    cfg,
-		client: &http.Client{},
+		client: &http.Client{Transport: NewRetryTransport()},
 	}
 }
 

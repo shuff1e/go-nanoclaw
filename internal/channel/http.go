@@ -680,6 +680,26 @@ func (h *HTTPChannel) rateLimitPerMinute() int {
 	return h.Gateway.Config.RateLimitPerMin
 }
 
+// CleanupRateBuckets removes stale rate limit buckets older than 5 minutes.
+func (h *HTTPChannel) CleanupRateBuckets() int {
+	h.rateMu.Lock()
+	defer h.rateMu.Unlock()
+
+	if h.rateBuckets == nil {
+		return 0
+	}
+
+	cutoff := time.Now().Add(-5 * time.Minute)
+	removed := 0
+	for key, bucket := range h.rateBuckets {
+		if bucket.WindowStart.Before(cutoff) {
+			delete(h.rateBuckets, key)
+			removed++
+		}
+	}
+	return removed
+}
+
 func (h *HTTPChannel) rateLimitIdentity(r *http.Request) string {
 	if key := strings.TrimSpace(r.Header.Get("X-API-Key")); key != "" {
 		return "key:" + key
