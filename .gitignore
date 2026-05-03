@@ -1,4 +1,6 @@
 bin/
+nanoclaw
 .codex/
+.claude/
 .idea/
 .DS_Store
