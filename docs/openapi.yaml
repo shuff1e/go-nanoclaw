@@ -1,0 +1,801 @@
+openapi: 3.0.3
+info:
+  title: NanoClaw Agent Runtime API
+  description: HTTP API for the NanoClaw autonomous agent runtime.
+  version: 0.1.0
+
+servers:
+  - url: http://localhost:8765
+    description: Local development
+
+security:
+  - ApiKeyAuth: []
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        request_id:
+          type: string
+
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [alive, stopped]
+        checks:
+          type: object
+        timestamp:
+          type: string
+          format: date-time
+
+    ReadinessStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ready, not_ready, degraded]
+        checks:
+          type: object
+        timestamp:
+          type: string
+          format: date-time
+
+    InputRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          description: The user message
+        agent_id:
+          type: string
+          description: Target agent ID (defaults to configured default)
+        session_id:
+          type: string
+          description: Session ID (defaults to agent_id)
+        mode:
+          type: string
+          enum: [direct, plan_execute, plan_execute_verify]
+          default: direct
+        max_retries:
+          type: integer
+          default: 0
+
+    InputResponse:
+      type: object
+      properties:
+        agent_id:
+          type: string
+        request_id:
+          type: string
+        task_id:
+          type: string
+        response:
+          type: string
+
+    AsyncTaskResponse:
+      type: object
+      properties:
+        request_id:
+          type: string
+        task_id:
+          type: string
+        agent_id:
+          type: string
+        status:
+          type: string
+
+    CancelTaskRequest:
+      type: object
+      properties:
+        request_id:
+          type: string
+        task_id:
+          type: string
+
+    RetryTaskRequest:
+      type: object
+      properties:
+        agent_id:
+          type: string
+        request_id:
+          type: string
+        task_id:
+          type: string
+        max_retries:
+          type: integer
+
+    DecideApprovalRequest:
+      type: object
+      required: [approval_id, decision]
+      properties:
+        agent_id:
+          type: string
+        approval_id:
+          type: string
+        decision:
+          type: string
+          enum: [approved, rejected]
+        decided_by:
+          type: string
+
+    TaskView:
+      type: object
+      properties:
+        request_id:
+          type: string
+        task_id:
+          type: string
+        session_id:
+          type: string
+        agent_id:
+          type: string
+        source:
+          type: string
+        mode:
+          type: string
+        status:
+          type: string
+        error:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+
+    ExecutionLog:
+      type: object
+      properties:
+        agent_id:
+          type: string
+        request_id:
+          type: string
+        session_id:
+          type: string
+        source:
+          type: string
+        status:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+
+    ToolAuditLog:
+      type: object
+      properties:
+        agent_id:
+          type: string
+        tool_name:
+          type: string
+        status:
+          type: string
+        request_id:
+          type: string
+        trace_id:
+          type: string
+
+    TraceEvent:
+      type: object
+      properties:
+        agent_id:
+          type: string
+        trace_id:
+          type: string
+        request_id:
+          type: string
+        event:
+          type: string
+        span:
+          type: string
+        status:
+          type: string
+
+    ApprovalRecord:
+      type: object
+      properties:
+        id:
+          type: string
+        agent_id:
+          type: string
+        tool_name:
+          type: string
+        status:
+          type: string
+
+    MemoryRecord:
+      type: object
+      properties:
+        agent_id:
+          type: string
+        category:
+          type: string
+        content:
+          type: string
+
+    CronJob:
+      type: object
+      properties:
+        name:
+          type: string
+        schedule:
+          type: string
+        enabled:
+          type: boolean
+        last_run:
+          type: string
+          format: date-time
+
+    PaginatedResponse:
+      type: object
+      properties:
+        agent_id:
+          type: string
+        limit:
+          type: integer
+        items:
+          type: array
+          items: {}
+
+paths:
+  /health:
+    get:
+      summary: System health
+      description: Returns overall system health including uptime and agent info.
+      security: []
+      tags: [Health]
+      responses:
+        "200":
+          description: Health status
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /health/live:
+    get:
+      summary: Liveness probe
+      description: Returns whether the process is alive.
+      security: []
+      tags: [Health]
+      responses:
+        "200":
+          description: Process is alive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /health/ready:
+    get:
+      summary: Readiness probe
+      description: Returns whether the service is ready to accept requests. Checks store and LLM API reachability.
+      security: []
+      tags: [Health]
+      responses:
+        "200":
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessStatus"
+        "503":
+          description: Service is not ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessStatus"
+
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      description: Returns metrics in Prometheus text format.
+      security: []
+      tags: [Observability]
+      responses:
+        "200":
+          description: Prometheus metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /input:
+    post:
+      summary: Send input (synchronous)
+      description: Sends a message to an agent and waits for the response.
+      tags: [Agent]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InputRequest"
+      responses:
+        "200":
+          description: Agent response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InputResponse"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /tasks:
+    post:
+      summary: Submit task (asynchronous)
+      description: Submits a task for asynchronous execution. Returns immediately with task metadata.
+      tags: [Tasks]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InputRequest"
+      responses:
+        "202":
+          description: Task accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AsyncTaskResponse"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    get:
+      summary: List tasks
+      description: Returns task views with optional filtering.
+      tags: [Tasks]
+      parameters:
+        - name: agent_id
+          in: query
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          schema:
+            type: string
+        - name: request_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: source
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: since
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: until
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Task list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedResponse"
+
+  /tasks/stream:
+    get:
+      summary: Stream task events (SSE)
+      description: Server-Sent Events stream of task lifecycle events.
+      tags: [Tasks]
+      parameters:
+        - name: request_id
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: SSE event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /tasks/cancel:
+    post:
+      summary: Cancel a task
+      tags: [Tasks]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CancelTaskRequest"
+      responses:
+        "200":
+          description: Task cancellation initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request_id:
+                    type: string
+                  task_id:
+                    type: string
+                  status:
+                    type: string
+
+  /tasks/retry:
+    post:
+      summary: Retry a failed task
+      tags: [Tasks]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RetryTaskRequest"
+      responses:
+        "202":
+          description: Retry accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AsyncTaskResponse"
+
+  /executions:
+    get:
+      summary: List execution logs
+      tags: [Observability]
+      parameters:
+        - name: agent_id
+          in: query
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          schema:
+            type: string
+        - name: request_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: source
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: since
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: until
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Execution logs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedResponse"
+
+  /tool-audit:
+    get:
+      summary: List tool audit logs
+      tags: [Observability]
+      parameters:
+        - name: agent_id
+          in: query
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          schema:
+            type: string
+        - name: request_id
+          in: query
+          schema:
+            type: string
+        - name: trace_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: tool_name
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: since
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: until
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Tool audit logs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedResponse"
+            application/x-ndjson:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ToolAuditLog"
+
+  /approvals:
+    get:
+      summary: List approval records
+      tags: [Approvals]
+      parameters:
+        - name: agent_id
+          in: query
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          schema:
+            type: string
+        - name: request_id
+          in: query
+          schema:
+            type: string
+        - name: trace_id
+          in: query
+          schema:
+            type: string
+        - name: task_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: tool_name
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: since
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: until
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Approval records
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedResponse"
+
+  /approvals/decide:
+    post:
+      summary: Decide on a pending approval
+      tags: [Approvals]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecideApprovalRequest"
+      responses:
+        "200":
+          description: Approval decision recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalRecord"
+
+  /traces:
+    get:
+      summary: List trace events
+      tags: [Observability]
+      parameters:
+        - name: agent_id
+          in: query
+          schema:
+            type: string
+        - name: trace_id
+          in: query
+          schema:
+            type: string
+        - name: request_id
+          in: query
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          schema:
+            type: string
+        - name: span
+          in: query
+          schema:
+            type: string
+        - name: event
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+        - name: since
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: until
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Trace events
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedResponse"
+
+  /sessions:
+    get:
+      summary: List session entries
+      tags: [Sessions]
+      parameters:
+        - name: agent_id
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Session entries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedResponse"
+
+  /memory:
+    get:
+      summary: List memory records
+      tags: [Memory]
+      parameters:
+        - name: agent_id
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Memory records
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedResponse"
+
+  /cron:
+    get:
+      summary: List cron jobs
+      tags: [Cron]
+      parameters:
+        - name: agent_id
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Cron jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agent_id:
+                    type: string
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CronJob"
+
+tags:
+  - name: Health
+    description: Health and readiness probes
+  - name: Agent
+    description: Synchronous agent interaction
+  - name: Tasks
+    description: Asynchronous task management
+  - name: Approvals
+    description: Tool approval workflows
+  - name: Observability
+    description: Execution logs, traces, metrics
+  - name: Sessions
+    description: Session history
+  - name: Memory
+    description: Agent memory records
+  - name: Cron
+    description: Scheduled tasks

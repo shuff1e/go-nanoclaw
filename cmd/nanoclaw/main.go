@@ -300,6 +300,9 @@ func serveCmd() *cobra.Command {
 
 			// Start HTTP server (blocks until ctx is canceled)
 			httpCh := channel.NewHTTPChannel(gw, agentID, host, port)
+			if cfg.TLSCertFile != "" && cfg.TLSKeyFile != "" {
+				httpCh.WithTLS(cfg.TLSCertFile, cfg.TLSKeyFile)
+			}
 			fmt.Println("NanoClaw service running. Press Ctrl+C to stop.")
 			return httpCh.Start(ctx)
 		},

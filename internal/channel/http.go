@@ -22,6 +22,8 @@ type HTTPChannel struct {
 	DefaultAgent string
 	Host         string
 	Port         int
+	TLSCertFile  string
+	TLSKeyFile   string
 	server       *http.Server
 	rateMu       sync.Mutex
 	rateBuckets  map[string]rateBucket
@@ -69,6 +71,13 @@ func NewHTTPChannel(gw *gateway.Gateway, defaultAgent, host string, port int) *H
 	}
 }
 
+// WithTLS sets TLS certificate and key files for HTTPS.
+func (h *HTTPChannel) WithTLS(certFile, keyFile string) *HTTPChannel {
+	h.TLSCertFile = certFile
+	h.TLSKeyFile = keyFile
+	return h
+}
+
 // Start begins serving HTTP endpoints.
 func (h *HTTPChannel) Start(ctx context.Context) error {
 	h.server = &http.Server{
@@ -77,13 +86,23 @@ func (h *HTTPChannel) Start(ctx context.Context) error {
 	}
 
 	addr := h.server.Addr
-	slog.Info("HTTP server starting", "addr", addr)
-	fmt.Printf("Health endpoint: http://%s/health\n", addr)
-	fmt.Printf("Input endpoint:  POST http://%s/input\n", addr)
+	scheme := "http"
+	if h.TLSCertFile != "" && h.TLSKeyFile != "" {
+		scheme = "https"
+	}
+	slog.Info("HTTP server starting", "addr", addr, "tls", scheme == "https")
+	fmt.Printf("Health endpoint: %s://%s/health\n", scheme, addr)
+	fmt.Printf("Input endpoint:  POST %s://%s/input\n", scheme, addr)
 
 	errCh := make(chan error, 1)
 	go func() {
-		if err := h.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		var err error
+		if h.TLSCertFile != "" && h.TLSKeyFile != "" {
+			err = h.server.ListenAndServeTLS(h.TLSCertFile, h.TLSKeyFile)
+		} else {
+			err = h.server.ListenAndServe()
+		}
+		if err != nil && err != http.ErrServerClosed {
 			errCh <- err
 		}
 		close(errCh)

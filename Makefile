@@ -42,8 +42,11 @@ fmt:
 	$(GO) fmt ./...
 	$(GOLANGCI_LINT) run --fix ./...
 
+release-snapshot:
+	goreleaser release --snapshot --clean
+
 clean:
-	rm -rf bin/ coverage.out
+	rm -rf bin/ coverage.out dist/
 
 docker-build:
 	docker build -t $(BINARY_NAME):$(VERSION) .
@@ -66,6 +69,7 @@ help:
 	@echo "  vet          - Run go vet"
 	@echo "  fmt          - Format code"
 	@echo "  clean        - Remove build artifacts"
-	@echo "  docker-build - Build Docker image"
-	@echo "  docker-run   - Run Docker container"
-	@echo "  all          - Run lint, test, build"
+	@echo "  docker-build     - Build Docker image"
+	@echo "  docker-run       - Run Docker container"
+	@echo "  release-snapshot - Build release snapshot (local test)"
+	@echo "  all              - Run lint, test, build"

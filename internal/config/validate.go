@@ -33,6 +33,11 @@ func (cfg *Config) Validate() []string {
 		issues = append(issues, validateAgentDef(prefix, def)...)
 	}
 
+	// TLS: both cert and key must be provided together
+	if (cfg.TLSCertFile != "") != (cfg.TLSKeyFile != "") {
+		issues = append(issues, "tls_cert_file and tls_key_file must both be set or both be empty")
+	}
+
 	return issues
 }
 

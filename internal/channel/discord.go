@@ -41,7 +41,23 @@ func (d *DiscordChannel) Start(ctx context.Context) error {
 	}
 	d.session = session
 
+	session.ShouldReconnectOnError = true
 	session.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentsDirectMessages | discordgo.IntentsMessageContent
+
+	// Track connection state for alerting
+	var disconnectCount int64
+	session.AddHandler(func(s *discordgo.Session, e *discordgo.Connect) {
+		disconnectCount = 0
+		slog.Info("Discord connected")
+	})
+	session.AddHandler(func(s *discordgo.Session, e *discordgo.Disconnect) {
+		disconnectCount++
+		slog.Warn("Discord disconnected", "attempt", disconnectCount)
+		if disconnectCount >= 5 {
+			slog.Error("Discord repeated disconnections — connection may be unstable",
+				"disconnect_count", disconnectCount)
+		}
+	})
 
 	session.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
 		if m.Author.ID == s.State.User.ID {

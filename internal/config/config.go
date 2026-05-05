@@ -118,6 +118,8 @@ type Config struct {
 	MaxToolRounds      int                  `yaml:"max_tool_rounds"`
 	MaxToolCalls       int                  `yaml:"max_tool_calls"`
 	MaxToolOutputBytes int                  `yaml:"max_tool_output_bytes"`
+	TLSCertFile        string               `yaml:"tls_cert_file"`
+	TLSKeyFile         string               `yaml:"tls_key_file"`
 }
 
 func NewConfig() *Config {
@@ -195,6 +197,8 @@ type rawConfig struct {
 	MaxToolRounds      int                       `yaml:"max_tool_rounds"`
 	MaxToolCalls       int                       `yaml:"max_tool_calls"`
 	MaxToolOutputBytes int                       `yaml:"max_tool_output_bytes"`
+	TLSCertFile        string                    `yaml:"tls_cert_file"`
+	TLSKeyFile         string                    `yaml:"tls_key_file"`
 	Agents             map[string]map[string]any `yaml:"agents"`
 }
 
@@ -228,6 +232,12 @@ func (cfg *Config) apply(raw *rawConfig) {
 	}
 	if raw.MaxToolOutputBytes > 0 {
 		cfg.MaxToolOutputBytes = raw.MaxToolOutputBytes
+	}
+	if raw.TLSCertFile != "" {
+		cfg.TLSCertFile = ExpandHome(raw.TLSCertFile)
+	}
+	if raw.TLSKeyFile != "" {
+		cfg.TLSKeyFile = ExpandHome(raw.TLSKeyFile)
 	}
 
 	for agentID, agentRaw := range raw.Agents {
